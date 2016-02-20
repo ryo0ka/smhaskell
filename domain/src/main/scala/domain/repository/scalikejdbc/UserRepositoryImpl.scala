@@ -40,4 +40,5 @@ object UserRepositoryImpl extends UserRepository {
       val sql = sql"""delete users where id = $id"""
       sql.update.apply()
     }
+
 }

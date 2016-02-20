@@ -1,10 +1,12 @@
 package fujitask
 
-import java.util.concurrent.{Executor, TimeUnit}
+import java.util.concurrent.{TimeUnit, Executor}
 
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
+import scalaprops._
+import scalaz.Equal
 
 object Helper {
   type ATask[A] = Task[Int, A]

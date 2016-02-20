@@ -1,6 +1,5 @@
 package domain.repository.scalikejdbc
 
-import fujitask.scalikejdbc
 import scalikejdbc._
 import scalikejdbc.config._
 

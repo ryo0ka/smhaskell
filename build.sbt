@@ -8,8 +8,8 @@ lazy val root = (project in file(".")).aggregate(fujitask, fujitaskScalikeJDBC, 
 lazy val fujitask = project.settings(commonSettings:_*).settings(
   commonSettings ++ Seq(
     libraryDependencies ++= Seq(
-      "com.github.scalaprops" %% "scalaprops" % "0.1.15" % Test,
-      "com.github.scalaprops" %% "scalaprops-scalazlaws" % "0.1.15" % Test
+      "com.github.scalaprops" %% "scalaprops" % "0.1.15" % "test",
+      "com.github.scalaprops" %% "scalaprops-scalazlaws" % "0.1.15" % "test"
     ),
     testFrameworks += new TestFramework("scalaprops.ScalapropsFramework")
   ):_*

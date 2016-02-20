@@ -9,9 +9,8 @@ package object scalikejdbc {
 
   def ask: Task[Transaction, DBSession] =
     new Task[Transaction, DBSession] {
-      def execute(transaction: Transaction)(implicit ec: ExecutionContext): Future[DBSession] = {
+      def execute(transaction: Transaction)(implicit ec: ExecutionContext): Future[DBSession] =
         Future.successful(transaction.asInstanceOf[ScalikeJDBCTransaction].session)
-      }
     }
 
   implicit def readRunner[R >: ReadTransaction] : TaskRunner[R] =
@@ -23,7 +22,8 @@ package object scalikejdbc {
         future.onComplete(_ => session.close())
         future
       }
-}
+    }
+
   implicit def readWriteRunner[R >: ReadWriteTransaction]: TaskRunner[R] =
     new TaskRunner[R] {
       def run[A](task: Task[R, A]): Future[A] = {
@@ -31,4 +31,5 @@ package object scalikejdbc {
         DB.futureLocalTx(session => task.execute(new ScalikeJDBCReadWriteTransaction(session)))
       }
     }
+
 }
