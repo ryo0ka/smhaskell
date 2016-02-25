@@ -47,10 +47,14 @@ import scala.concurrent.Future
   *
   * [[Task]] determines transaction permission level at compile time:
   * Each Task instance is tagged by a type that represents a permission level (namely `Resource`).
-  * The upper bound of `Resource` (`-Resource`) and the `flatMap` method's restriction (`ExtendedResource <: Resource`)
-  * guarantee the `Resource` type of the `flatMap` method's product to be a subtype of its own and a given `Resource` types.
-  * Here, if the Read/Write is defined to be a subtype of the Read in the type system and used for `Resource`,
-  * then the above permission determination completes at compile time. No more runtime error!
+  * If the Read/Write is defined to be a subtype of the Read in the type system and used for `Resource`,
+  * the upper bound of `Resource` (`-Resource`) and the `flatMap` method's restriction (`ExtendedResource <: Resource`)
+  * guarantee the type conversion (binding) to follow this rule:
+  *   Task[Read     ] * Task[Read     ] = Task[Read]
+  *   Task[Read     ] * Task[ReadWrite] = Task[ReadWrite]
+  *   Task[ReadWrite] * Task[Read     ] = Task[ReadWrite]
+  *   Task[ReadWrite] * Task[ReadWrite] = Task[ReadWrite]
+  * Then the above permission determination completes at compile time. No more runtime error!
   * [[Transaction]] defines the Read/Write inheriting the Read permission.
   *
   * @tparam Resource determines this Task's permission level.
