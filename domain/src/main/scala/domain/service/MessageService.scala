@@ -1,10 +1,11 @@
 package domain.service
 
-import domain.entity.Message
+import domain.entity.{User, Message}
 import domain.repository.UserRepository
 import domain.repository.MessageRepository
 import domain.repository.scalikejdbc.UserRepositoryImpl
 import domain.repository.scalikejdbc.MessageRepositoryImpl
+import fujitask.{ReadTransaction, ReadWriteTransaction, Task}
 import fujitask.scalikejdbc._
 import scala.concurrent.Future
 
@@ -30,12 +31,18 @@ object MessageService {
     messageRepository.delete(id).run()
 
   def createByUserId(message: String, userId: Long): Future[Message] = {
-    val task =
+    val task: Task[ReadWriteTransaction, Message] =
       for {
         userOpt <- userRepository.read(userId)
         user = userOpt.getOrElse(throw new IllegalArgumentException("User Not Found"))
         message <- messageRepository.create(message, user.name)
       } yield message
+
+    var a: Task[ReadWriteTransaction, Option[User]] = for {
+      message <- messageRepository.create(message, "")
+      useropt <- userRepository.read(userId)
+      test <- userRepository.read(userId)
+    } yield useropt
 
     task.run()
   }

@@ -3,101 +3,76 @@ package fujitask
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 
-/** This `Task` Monad aims to provide two functionality:
-  *   1. abstracts out a transaction with database like the Reader Monad
-  *   2. prevent permission errors of transactions at compile time
+/** This is a rough English translation and explanation of:
+  * https://github.com/hexx/fujitask-simple
   *
-  * [Definition Of "Transaction" In This Library]
-  * "Transaction" is a set of tasks to a database.
-  * "Transaction object" is an object that represents a transaction,
-  * which some database libraries name as "session object".
+  * This [[Task]] trait aims to provide two functionality:
+  *   1. make it easy to define database transactions by binding queries
+  *   2. determines a transaction's access permission level at compile time
   *
-  * [Monadic Approach To Transaction]
-  * A `Task` object represents a transaction.
-  * A Task has a computation to gain a value (whose type is `A`.)
-  * The `flatMap`(>>=/bind) method binds those computations to be executed in an order,
-  * and the `run` method executes them all as a transaction, just like Reader Monad.
+  * 1.
+  * What "query" and "transaction" means here:
+  * A query is a message to a database: "create", "get", etc.
+  * A transaction is an ordered list of those queries to be executed in one session;
+  * for example, 1. create a user named "Dan", 2. read its ID number.
   *
-  *   trait Task[-Resource, +A] { self =>
+  * Why we combine queries into a transaction:
+  * Executing multiple queries in one session improves database traffic in some cases.
+  * PofEAA introduces the benefit: http://martinfowler.com/eaaCatalog/unitOfWork.html
   *
-  * This implements PofEAA's "Unit of Work":
-  * http://martinfowler.com/eaaCatalog/unitOfWork.html
+  * Monadic approach to defining a transaction:
+  * A transaction is essentially one query that compounds multiple queries.
+  * A transaction has an empty state: no queries given to execute.
+  * Well, these make it a Monad. Yay :)
+  * The Monadic value is a (compound of) query, which is a function from a database to whatever value.
+  * The bind function combines those functions just like Reader Monad and State Monad do.
   *
-  * [Two Types Of Transaction Permission And Runtime Error]
-  * There are two types of transaction: "Read" and "Read/Write".
-  * In common master/slave structured database,
-  * "Read/Write" transactions must ask the master to apply a modification.
-  * "Read/Write" transactions asking a slave instead may cause a runtime error,
-  * because only the master has a permission to modify the database.
+  * [[Task]] as a transaction Monad:
+  * A Task instance represents both a query and a transaction (as a transaction is a compounded query.)
+  * The `execute` method defines the Monadic value: a function from a database to any values (`A`).
+  * The `flatMap` method is the bind function to combine queries in a new Task and return it.
+  * The `run` method executes the transaction following a given instruction.
   *
-  * [Determining Permission Level At Compile Time]
-  * Each Task is tagged with a transaction type (namely `Resource`)
-  * which represents its permission level (cf. whether its query must ask the master or a slave.)
+  * The example of the usage can be seen in `domain\service\MessageService.scala` in the `domain` package.
   *
-  *   trait Task[-Resource, +A] { self =>
+  * 2.
+  * Two permission levels and runtime error:
+  * In a master/slave structure database, queries that modify the database must not be sent to a slave database.
+  * Such queries are labeled as a Read/Write query so that a slave database would recognize and block them beforehand.
+  * Only queries labeled as a Read query can be sent to a slave database.
   *
-  * `execute` implements the Task's task using the specified permission level.
-  * This reduces an accidental misdefinition of tasks and premission levels.
+  * Determining transaction's permission level:
+  * A transaction's permission level is determined by its compounding queries':
+  * for example, if one is Read/Write and another is Read, then the transaction is Read/Write.
   *
-  * `flatMap` restricts a given monadic function's permission level to be variant to its own Task's.
-  * So, if "Read/Write" is set to be a subtype of the "Read",
-  * `foldMap` of a "Read" Task given a "Read/Write" monadic function reproduces a "Read/Write" Task.
-  * Thus a transaction that writes a database is always sent to the master database.
-  * Hense if a whole transaction is just to read a database, it will be sent to a slave database.
-  *
-  *    def flatMap[ExtendedResource <: Resource, B](f: A => Task[ExtendedResource, B]): Task[ExtendedResource, B] =
-  *
-  * I honestly don't know why "Read" after "Read/Write" has to be a compile error.
-  * I feel like it should become "Read/Write" as well as "Read/Write" after "Read".
-  *
-  * `Transaction.scala` defines a "Read/Write" transaction type inheriting "Read",
-  * and it is expected to be useful in case of a master/slave database.
+  * [[Task]] determines transaction permission level at compile time:
+  * Each Task instance is tagged by a type that represents a permission level (namely `Resource`).
+  * The upper bound of `Resource` (`-Resource`) and the `flatMap` method's restriction (`ExtendedResource <: Resource`)
+  * guarantee the `Resource` type of the `flatMap` method's product to be a subtype of its own and a given `Resource` types.
+  * Here, if the Read/Write is defined to be a subtype of the Read in the type system and used for `Resource`,
+  * then the above permission determination completes at compile time. No more runtime error!
+  * [[Transaction]] defines the Read/Write inheriting the Read permission.
   *
   * @tparam Resource determines this Task's permission level.
   * @tparam A determines the type of value that this Task will receive when executed.
  */
 trait Task[-Resource, +A] { self =>
-  /** Executes this task's process.
-    *
-    * @param resource determines this Task's permission level.
-    * @param ec ExecutionContext
-    * @return value that this Task aims to receive from the database.
-    */
   def execute(resource: Resource)(implicit ec: ExecutionContext): Future[A]
 
-  /** Binds this Task (Monadic bind.)
-    * See the above explanation.
-    *
-    * @param f Monadic function toa new Task.
-    * @tparam ExtendedResource determines the reproduced Task's transaction type.
-    */
   def flatMap[ExtendedResource <: Resource, B](f: A => Task[ExtendedResource, B]): Task[ExtendedResource, B] =
     new Task[ExtendedResource, B] {
       def execute(resource: ExtendedResource)(implicit ec: ExecutionContext): Future[B] =
         self.execute(resource).map(f).flatMap(_.execute(resource))
     }
 
-  /** Maps a given function to the result of this task.
-    */
   def map[B](f: A => B): Task[Resource, B] = flatMap(a => Task(f(a)))
 
-  /** Executes this Task using a `TaskRunner` which corresponds to this Task's transaction.
-    * The TaskRunner may be chosen implicitly.
-    *
-    * @param runner TaskRunner to execute this Task.
-    * @tparam ExtendedResource determines the type of transaction.
-    */
   def run[ExtendedResource <: Resource]()(implicit runner: TaskRunner[ExtendedResource]): Future[A] = {
     runner.run(self)
   }
 }
 
 object Task {
-  /** Constructs a Task with a given value.
-    *
-    * @param a value to be put into this Task. Lazily evaluated.
-    * @tparam Resource represents this Task's permission level.
-    */
   def apply[Resource, A](a: => A): Task[Resource, A] =
     new Task[Resource, A] {
       def execute(resource: Resource)(implicit executor: ExecutionContext): Future[A] =
@@ -105,13 +80,6 @@ object Task {
     }
 }
 
-/** Executes a Task of the specified transaction type.
-  * This instance has to be defined for each transaction type.
-  *
-  * @tparam Resource represents the transaction type that this instance supports.
-  */
 trait TaskRunner[Resource] {
-  /** Runs a given Task whose transaction type matches with this runner's.
-    */
   def run[A](task: Task[Resource, A]): Future[A]
 }
